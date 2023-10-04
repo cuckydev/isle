@@ -13,9 +13,9 @@ MxTransitionManager::MxTransitionManager()
   m_animationTimer = 0;
   m_transitionType = NOT_TRANSITIONING;
   m_ddSurface = NULL;
-  m_unk08 = 0;
-  m_unk1c = 0;
-  m_unk20.bit0 = FALSE;
+  m_waitIndicator = NULL;
+  m_copyBuffer = NULL;
+  m_copyFlags.bit0 = FALSE;
   m_unk28.bit0 = FALSE;
   m_unk24 = 0;
 }
@@ -23,11 +23,11 @@ MxTransitionManager::MxTransitionManager()
 // OFFSET: LEGO1 0x1004ba00
 MxTransitionManager::~MxTransitionManager()
 {
-  free(m_unk1c);
+  free(m_copyBuffer);
 
-  if (m_unk08 != NULL) {
-    delete m_unk08->m_unk1c;
-    delete m_unk08;
+  if (m_waitIndicator != NULL) {
+    delete m_waitIndicator->GetAction();
+    delete m_waitIndicator;
   }
 
   TickleManager()->UnregisterClient(this);
@@ -90,7 +90,7 @@ void MxTransitionManager::Transition_Dissolve()
   }
 
   if (res == DD_OK) {
-    FUN_1004c4d0(ddsd);
+    SubmitCopyRect(ddsd);
 
     for (MxS32 i = 0; i < 640; i++) {
       // Select 16 columns on each tick
@@ -115,7 +115,7 @@ void MxTransitionManager::Transition_Dissolve()
       }
     }
 
-    FUN_1004c580(ddsd);
+    SetupCopyRect(ddsd);
     m_ddSurface->Unlock(ddsd.lpSurface);
 
     if (VideoManager()->GetVideoParam().flags().GetFlipSurfaces()) {
@@ -133,16 +133,66 @@ void MxTransitionManager::SetWaitIndicator(MxVideoPresenter *videoPresenter)
   // TODO
 }
 
-// OFFSET: LEGO1 0x1004c4d0 STUB
-void MxTransitionManager::FUN_1004c4d0(DDSURFACEDESC &ddsc)
+// OFFSET: LEGO1 0x1004c4d0
+void MxTransitionManager::SubmitCopyRect(DDSURFACEDESC &ddsc)
 {
-  // TODO
+  // Check if the copy rect is setup
+  if (m_copyFlags.bit0 != FALSE && m_waitIndicator != NULL) {
+    const char *src = (const char*)m_copyBuffer;
+    if (src != NULL) {
+      // Copy the copy rect onto the surface
+      DWORD bytesPerPixel = ddsc.ddpfPixelFormat.dwRGBBitCount >> 3;
+
+      DWORD copyPitch = bytesPerPixel * (m_copyRect.right - m_copyRect.left + 1);
+
+      char *dst = (char*)ddsc.lpSurface + m_copyRect.top * ddsc.lPitch + m_copyRect.left * bytesPerPixel;
+
+      for (MxS32 length = 0; length < m_copyRect.bottom - m_copyRect.top + 1; length++) {
+        memcpy(dst, src, copyPitch);
+        dst += ddsc.lPitch;
+        src += copyPitch;
+      }
+
+      // Free the copy buffer
+      free(m_copyBuffer);
+      m_copyBuffer = NULL;
+    }
+  }
 }
 
-// OFFSET: LEGO1 0x1004c580 STUB
-void MxTransitionManager::FUN_1004c580(DDSURFACEDESC &ddsc)
+// OFFSET: LEGO1 0x1004c580
+void MxTransitionManager::SetupCopyRect(DDSURFACEDESC &ddsc)
 {
-  // TODO
+  // Check if the copy rect is setup
+  if (m_copyFlags.bit0 != FALSE && m_waitIndicator != NULL) {
+    MxVideoPresenter *waitIndicator = m_waitIndicator;
+    m_waitIndicator->Tickle();
+
+    if (waitIndicator->GetCurrentTickleState() > MxPresenter::TickleState_Starting) {
+      MxS32 copyLeft = waitIndicator->GetLocation().m_x;
+      MxS32 copyTop = waitIndicator->GetLocation().m_y;
+
+      DWORD bytesPerPixel = ddsc.ddpfPixelFormat.dwRGBBitCount >> 3;
+      DWORD copyPitch = bytesPerPixel * (m_copyRect.right - m_copyRect.left + 1);
+
+      MxS32 copyHeight = waitIndicator->GetHeight();
+      MxS32 copyWidth = waitIndicator->GetWidth();
+
+      m_copyRect.left = copyLeft;
+      m_copyRect.top = copyTop;
+      m_copyRect.right = copyLeft + copyWidth - 1;
+      m_copyRect.bottom = copyTop + copyHeight - 1;
+
+      char *src = (char*)ddsc.lpSurface + copyTop * ddsc.lPitch + copyLeft * bytesPerPixel;
+      char *copyBuffer = (char*)malloc(copyHeight * copyWidth * bytesPerPixel);
+      m_copyBuffer = copyBuffer;
+      if (copyBuffer == NULL) {
+        return;
+      }
+
+      // TODO
+    }
+  }
 }
 
 // OFFSET: LEGO1 0x1004baa0
@@ -155,7 +205,7 @@ MxResult MxTransitionManager::GetDDrawSurfaceFromVideoManager() // vtable+0x14
 
 // OFFSET: LEGO1 0x1004bb70
 MxResult MxTransitionManager::StartTransition(TransitionType p_animationType, MxS32 p_speed,
-                                              MxBool p_unk, MxBool p_playMusicInAnim)
+                                              MxBool p_doCopy, MxBool p_playMusicInAnim)
 {
   if (this->m_transitionType == NOT_TRANSITIONING) {
     if (!p_playMusicInAnim) {
@@ -165,14 +215,14 @@ MxResult MxTransitionManager::StartTransition(TransitionType p_animationType, Mx
 
     this->m_transitionType = p_animationType;
 
-    m_unk20.bit0 = p_unk;
+    m_copyFlags.bit0 = p_doCopy;
 
-    if (m_unk20.bit0 && m_unk08 != NULL) {
-      m_unk08->vtable54(1);
+    if (m_copyFlags.bit0 && m_waitIndicator != NULL) {
+      m_waitIndicator->Enable(TRUE);
 
-      MxTransitionManagerUnknownSubclass2 *iVar2 = m_unk08->m_unk1c;
-      iVar2->m_unk3c = 10000;
-      iVar2->m_unk30 |= 0x200;
+      MxDSAction *action = m_waitIndicator->GetAction();
+      action->SetLoopCount(10000);
+      action->SetFlags(action->GetFlags() | 0x200);
     }
 
     MxU32 time = timeGetTime();

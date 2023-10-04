@@ -86,21 +86,19 @@ public:
     BROKEN // Unknown what this is supposed to be, it locks the game up
   };
 
-  MxResult StartTransition(TransitionType p_animationType, MxS32 p_speed, MxBool p_unk, MxBool p_playMusicInAnim);
+  MxResult StartTransition(TransitionType p_animationType, MxS32 p_speed, MxBool p_doCopy, MxBool p_playMusicInAnim);
 
 private:
   void EndTransition(MxBool);
   void Transition_Dissolve();
-  void FUN_1004c4d0(DDSURFACEDESC &);
-  void FUN_1004c580(DDSURFACEDESC &);
+  void SubmitCopyRect(DDSURFACEDESC &);
+  void SetupCopyRect(DDSURFACEDESC &);
 
-  MxTransitionManagerUnknownSubclass1 *m_unk08;
-  undefined4 m_unk0c;
-  undefined4 m_unk10;
-  undefined4 m_unk14;
-  undefined4 m_unk18;
-  void *m_unk1c;
-  flag_bitfield m_unk20;
+  MxVideoPresenter *m_waitIndicator;
+  RECT m_copyRect;
+  void *m_copyBuffer;
+
+  flag_bitfield m_copyFlags;
   undefined4 m_unk24;
   flag_bitfield m_unk28;
 
