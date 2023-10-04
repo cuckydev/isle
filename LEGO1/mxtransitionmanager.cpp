@@ -137,27 +137,32 @@ void MxTransitionManager::SetWaitIndicator(MxVideoPresenter *videoPresenter)
 void MxTransitionManager::SubmitCopyRect(DDSURFACEDESC &ddsc)
 {
   // Check if the copy rect is setup
-  if (m_copyFlags.bit0 != FALSE && m_waitIndicator != NULL) {
-    const char *src = (const char*)m_copyBuffer;
-    if (src != NULL) {
-      // Copy the copy rect onto the surface
-      DWORD bytesPerPixel = ddsc.ddpfPixelFormat.dwRGBBitCount >> 3;
-
-      DWORD copyPitch = bytesPerPixel * (m_copyRect.right - m_copyRect.left + 1);
-
-      char *dst = (char*)ddsc.lpSurface + m_copyRect.top * ddsc.lPitch + m_copyRect.left * bytesPerPixel;
-
-      for (MxS32 length = 0; length < m_copyRect.bottom - m_copyRect.top + 1; length++) {
-        memcpy(dst, src, copyPitch);
-        dst += ddsc.lPitch;
-        src += copyPitch;
-      }
-
-      // Free the copy buffer
-      free(m_copyBuffer);
-      m_copyBuffer = NULL;
-    }
+  if (m_copyFlags.bit0 == FALSE || m_waitIndicator == NULL || m_copyBuffer == NULL) {
+    return;
   }
+
+  // Copy the copy rect onto the surface
+  char *dst;
+
+  DWORD bytesPerPixel = ddsc.ddpfPixelFormat.dwRGBBitCount / 8;
+
+  const char *src = (const char *)m_copyBuffer;
+
+  LONG copyPitch;
+  copyPitch = ((m_copyRect.right - m_copyRect.left) + 1) * bytesPerPixel;
+
+  LONG y;
+  dst = (char*)ddsc.lpSurface + (ddsc.lPitch * m_copyRect.top) + (bytesPerPixel * m_copyRect.left);
+
+  for (y = 0; y < m_copyRect.bottom - m_copyRect.top + 1; ++y) {
+    memcpy(dst, src, copyPitch);
+    src += copyPitch;
+    dst += ddsc.lPitch;
+  }
+
+  // Free the copy buffer
+  free(m_copyBuffer);
+  m_copyBuffer = NULL;
 }
 
 // OFFSET: LEGO1 0x1004c580
